@@ -47,6 +47,11 @@ Transform your anime watching experience with smooth 60fps playback using AI-pow
 git clone https://github.com/Demoen/animeflow.git
 cd animeflow
 
+# Download dependencies (required, ~3.5GB, takes 10-20 min)
+cd scripts
+.\Download-Dependencies.ps1
+cd ..
+
 # Build
 cd AnimeFlow
 dotnet build --configuration Release
@@ -54,6 +59,8 @@ dotnet build --configuration Release
 # Run
 dotnet run --configuration Release
 ```
+
+**Note**: The `Download-Dependencies.ps1` script downloads VapourSynth, mpv, RIFE models, PyTorch (~2GB), and other required components. This is a one-time setup.
 
 ## 🎮 Usage
 
@@ -178,6 +185,52 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
 4. Push to the branch (`git push origin feature/AmazingFeature`)
 5. Open a Pull Request
+
+## 📦 For Developers
+
+### CI/CD Pipeline
+
+This project uses pre-built dependencies for faster CI builds:
+
+1. **Pre-built Package**: Dependencies are packaged once and uploaded to GitHub Releases
+2. **CI Downloads**: Workflows download the pre-built package instead of building from scratch  
+3. **Result**: Builds complete in ~2-5 minutes instead of ~20 minutes
+
+### Updating Dependencies
+
+If you need to update dependencies (e.g., newer mpv, RIFE models):
+
+```powershell
+# 1. Download fresh dependencies
+cd scripts
+.\Download-Dependencies.ps1 -Force
+
+# 2. Package them
+.\Package-Dependencies.ps1 -Version "latest"
+
+# 3. Upload to GitHub Release
+# - Create/edit release with tag 'deps-v1'
+# - Upload: release-artifacts/Dependencies-Windows-x64-latest.zip
+```
+
+See [scripts/DEPENDENCIES.md](scripts/DEPENDENCIES.md) for detailed instructions.
+
+### Project Structure
+
+```
+AnimeFlow/
+├── AnimeFlow/              # Main WPF application
+│   ├── Core/              # MPV player, VapourSynth integration
+│   ├── Models/            # Data models
+│   └── Services/          # Settings management
+├── Dependencies/          # External tools (gitignored)
+│   ├── mpv/              # Video player
+│   ├── vapoursynth/      # Video processing
+│   ├── rife/             # RIFE models
+│   └── tools/            # yt-dlp
+├── scripts/              # PowerShell automation scripts
+└── .github/workflows/    # CI/CD pipelines
+```
 
 ## 📜 License
 

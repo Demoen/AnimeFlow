@@ -21,19 +21,22 @@ jobs:
       with:
         dotnet-version: 8.0.x
 
-    - name: Setup Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
-
-    - name: Install 7-Zip
-      run: choco install 7zip -y
-
-    - name: Download Dependencies
+    - name: Download Pre-built Dependencies
       shell: powershell
       run: |
-        cd scripts
-        .\Download-Dependencies.ps1 -Force
+        Write-Host "Downloading pre-built dependencies from GitHub Release..." -ForegroundColor Cyan
+        
+        # Download from release with 'deps-v1' tag
+        $depsUrl = "https://github.com/${{ github.repository }}/releases/download/deps-v1/Dependencies-Windows-x64-latest.zip"
+        $depsZip = "Dependencies.zip"
+        
+        Invoke-WebRequest -Uri $depsUrl -OutFile $depsZip -MaximumRetryCount 3
+        Write-Host "✓ Downloaded dependencies package" -ForegroundColor Green
+        
+        Write-Host "Extracting dependencies..." -ForegroundColor Cyan
+        Expand-Archive -Path $depsZip -DestinationPath "Dependencies" -Force
+        Remove-Item $depsZip
+        Write-Host "✓ Dependencies ready" -ForegroundColor Green
 
     - name: Restore Dependencies
       run: dotnet restore AnimeFlow/AnimeFlow.csproj
