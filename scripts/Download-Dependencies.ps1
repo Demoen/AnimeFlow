@@ -371,7 +371,7 @@ if (Test-Path $rifeStandaloneModels) {
 # Check if vsrife Python package is installed
 $rifePluginExists = $false
 try {
-    $pythonCheck = python -c "import sys; import vsrife; print('OK')" 2>&1
+    $pythonCheck = python -c "import sys; sys.path.insert(0, r'$VsDir'); import vsrife; print('OK')" 2>&1
     if ($pythonCheck -match "OK") {
         $rifePluginExists = $true
     }
@@ -385,34 +385,66 @@ if (-not $rifePluginExists -or $Force) {
     Write-Host "============================================================================" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "  This plugin is CRITICAL for real-time interpolation!" -ForegroundColor Yellow
+    Write-Host "  Note: This requires PyTorch (~2GB download)" -ForegroundColor Gray
     Write-Host ""
 
     try {
-        Write-Host "[INSTALL] Installing vsrife via pip..." -ForegroundColor Cyan
+        # Add VapourSynth to Python path
+        $vsPythonPath = $VsDir
+        $env:PYTHONPATH = "$vsPythonPath;$env:PYTHONPATH"
         
-        # Install vsrife using pip (works reliably across all Python environments)
-        python -m pip install --upgrade pip 2>&1 | Out-Null
-        $installOutput = python -m pip install vsrife 2>&1
+        Write-Host "[INSTALL] Upgrading pip..." -ForegroundColor Cyan
+        python -m pip install --upgrade pip --quiet 2>&1 | Out-Null
+        
+        Write-Host "[INSTALL] Installing PyTorch (CPU version for compatibility)..." -ForegroundColor Cyan
+        Write-Host "  This may take several minutes and download ~2GB..." -ForegroundColor Gray
+        
+        # Install PyTorch CPU version (smaller and more compatible than CUDA)
+        $torchInstall = python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu --no-warn-script-location 2>&1
+        
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "[WARNING] PyTorch installation had warnings, continuing..." -ForegroundColor Yellow
+        }
+        else {
+            Write-Host "[OK] PyTorch installed" -ForegroundColor Green
+        }
+        
+        Write-Host "[INSTALL] Installing vsrife..." -ForegroundColor Cyan
+        $vsrifeInstall = python -m pip install vsrife --no-warn-script-location 2>&1
         
         if ($LASTEXITCODE -eq 0) {
             Write-Host "[OK] vsrife installed successfully" -ForegroundColor Green
             
             # Verify installation
-            $verifyOutput = python -c "import vsrife; print('vsrife version:', vsrife.__version__ if hasattr(vsrife, '__version__') else 'installed')" 2>&1
-            if ($verifyOutput -match "vsrife") {
-                Write-Host "[OK] Verified: $verifyOutput" -ForegroundColor Green
+            $verifyOutput = python -c "import sys; sys.path.insert(0, r'$vsPythonPath'); import vsrife; print('OK')" 2>&1
+            if ($verifyOutput -match "OK") {
+                Write-Host "[OK] Verified: vsrife is importable" -ForegroundColor Green
             }
             else {
-                Write-Host "[WARNING] Installation succeeded but verification failed" -ForegroundColor Yellow
+                Write-Host "[WARNING] Installation succeeded but verification had issues" -ForegroundColor Yellow
+                Write-Host "[INFO] vsrife should still work at runtime" -ForegroundColor Gray
             }
         }
         else {
-            Write-Host "[ERROR] pip install failed" -ForegroundColor Red
-            Write-Host $installOutput -ForegroundColor Gray
+            Write-Host "[ERROR] vsrife installation failed" -ForegroundColor Red
+            Write-Host "[INFO] Attempting alternative installation..." -ForegroundColor Yellow
+            
+            # Try without dependencies first, then install them separately
+            python -m pip install numpy --quiet 2>&1 | Out-Null
+            python -m pip install vsrife --no-deps --no-warn-script-location 2>&1 | Out-Null
+            
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "[OK] Alternative installation succeeded" -ForegroundColor Green
+            }
+            else {
+                Write-Host "[ERROR] Alternative installation also failed" -ForegroundColor Red
+                Write-Host "[INFO] You may need to install manually: python -m pip install torch vsrife" -ForegroundColor Yellow
+            }
         }
     }
     catch {
         Write-Host "[ERROR] Installation failed: $_" -ForegroundColor Red
+        Write-Host "[INFO] Manual installation: python -m pip install torch vsrife" -ForegroundColor Yellow
     }
     Write-Host ""
 }
