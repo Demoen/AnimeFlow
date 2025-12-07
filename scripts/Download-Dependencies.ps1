@@ -368,11 +368,11 @@ if (Test-Path $rifeStandaloneModels) {
 # DOWNLOAD RIFE VAPOURSYNTH PLUGIN (CRITICAL FOR INTERPOLATION!)
 # ============================================================================
 
-$rifePluginExists = $false
 # Check if vsrife Python package is installed
+$rifePluginExists = $false
 try {
-    python -c "import vsrife" 2>$null
-    if ($LASTEXITCODE -eq 0) {
+    $pythonCheck = python -c "import sys; import vsrife; print('OK')" 2>&1
+    if ($pythonCheck -match "OK") {
         $rifePluginExists = $true
     }
 } catch {
@@ -385,36 +385,34 @@ if (-not $rifePluginExists -or $Force) {
     Write-Host "============================================================================" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "  This plugin is CRITICAL for real-time interpolation!" -ForegroundColor Yellow
-    Write-Host "  Using VapourSynth's official plugin manager (vsrepo)..." -ForegroundColor Gray
     Write-Host ""
 
-    $vsDir = Join-Path $DepsDir "vapoursynth"
-    $vsrepoPy = Join-Path $vsDir "vsrepo.py"
-    
-    if (-not (Test-Path $vsrepoPy)) {
-        Write-Host "[ERROR] vsrepo.py not found in $vsDir" -ForegroundColor Red
-        Write-Host "[INFO] VapourSynth portable installation may be incomplete" -ForegroundColor Yellow
-    }
-    else {
-        try {
-            Write-Host "[INSTALL] Installing vsrife using vsrepo..." -ForegroundColor Cyan
-            Push-Location $vsDir
-            python vsrepo.py install vsrife
-            Pop-Location
+    try {
+        Write-Host "[INSTALL] Installing vsrife via pip..." -ForegroundColor Cyan
+        
+        # Install vsrife using pip (works reliably across all Python environments)
+        python -m pip install --upgrade pip 2>&1 | Out-Null
+        $installOutput = python -m pip install vsrife 2>&1
+        
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "[OK] vsrife installed successfully" -ForegroundColor Green
             
             # Verify installation
-            python -c "import vsrife" 2>$null
-            if ($LASTEXITCODE -eq 0) {
-                Write-Host "[OK] RIFE plugin installed successfully!" -ForegroundColor Green
-                Write-Host "[INFO] Plugin is Python-based (vsrife package)" -ForegroundColor Gray
+            $verifyOutput = python -c "import vsrife; print('vsrife version:', vsrife.__version__ if hasattr(vsrife, '__version__') else 'installed')" 2>&1
+            if ($verifyOutput -match "vsrife") {
+                Write-Host "[OK] Verified: $verifyOutput" -ForegroundColor Green
             }
             else {
-                Write-Host "[WARNING] Installation completed but import failed" -ForegroundColor Yellow
+                Write-Host "[WARNING] Installation succeeded but verification failed" -ForegroundColor Yellow
             }
         }
-        catch {
-            Write-Host "[ERROR] Installation failed: $_" -ForegroundColor Red
+        else {
+            Write-Host "[ERROR] pip install failed" -ForegroundColor Red
+            Write-Host $installOutput -ForegroundColor Gray
         }
+    }
+    catch {
+        Write-Host "[ERROR] Installation failed: $_" -ForegroundColor Red
     }
     Write-Host ""
 }
@@ -459,8 +457,8 @@ foreach ($component in $components) {
     if ($component.Check -eq "PythonImport") {
         # Check if Python package can be imported
         try {
-            python -c "import $($component.Import)" 2>$null
-            $exists = ($LASTEXITCODE -eq 0)
+            $importCheck = python -c "import $($component.Import); print('OK')" 2>&1
+            $exists = ($importCheck -match "OK")
         } catch {
             $exists = $false
         }
@@ -511,8 +509,8 @@ else {
     # Check specifically for RIFE plugin
     $rifePluginExists = $false
     try {
-        python -c "import vsrife" 2>$null
-        $rifePluginExists = ($LASTEXITCODE -eq 0)
+        $pythonCheck = python -c "import vsrife; print('OK')" 2>&1
+        $rifePluginExists = ($pythonCheck -match "OK")
     } catch {
         $rifePluginExists = $false
     }
@@ -521,9 +519,8 @@ else {
         Write-Host "⚠️  CRITICAL: RIFE VapourSynth plugin is missing!" -ForegroundColor Red
         Write-Host "   Interpolation will NOT work without it!" -ForegroundColor Red
         Write-Host ""
-        Write-Host "   Automatic fix:" -ForegroundColor Yellow
-        Write-Host "   cd Dependencies\vapoursynth" -ForegroundColor White
-        Write-Host "   python vsrepo.py install vsrife" -ForegroundColor White
+        Write-Host "   Manual fix:" -ForegroundColor Yellow
+        Write-Host "   python -m pip install vsrife" -ForegroundColor White
         Write-Host ""
     }
 }
