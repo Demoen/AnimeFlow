@@ -1,0 +1,84 @@
+name: Build and Test
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 8.0.x
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install 7-Zip
+      run: choco install 7zip -y
+
+    - name: Download Dependencies
+      shell: powershell
+      run: |
+        cd scripts
+        .\Download-Dependencies.ps1 -Force
+
+    - name: Restore Dependencies
+      run: dotnet restore AnimeFlow/AnimeFlow.csproj
+
+    - name: Build Debug
+      run: dotnet build AnimeFlow/AnimeFlow.csproj --configuration Debug --no-restore
+
+    - name: Build Release
+      run: dotnet build AnimeFlow/AnimeFlow.csproj --configuration Release --no-restore
+      
+    - name: Check Dependencies
+      shell: powershell
+      run: |
+        Write-Host "`n=== Dependency Check ===" -ForegroundColor Cyan
+        $depsPath = "Dependencies"
+        if (Test-Path $depsPath) {
+          Write-Host "✓ Dependencies folder exists" -ForegroundColor Green
+          
+          # Check critical files
+          $checks = @(
+            @{ Path = "mpv\libmpv-2.dll"; Name = "mpv library" },
+            @{ Path = "mpv\mpv.exe"; Name = "mpv player" },
+            @{ Path = "tools\yt-dlp.exe"; Name = "yt-dlp" },
+            @{ Path = "rife\rife-ncnn-vulkan.exe"; Name = "RIFE standalone" },
+            @{ Path = "models\rife-v4.6\flownet.bin"; Name = "RIFE models" },
+            @{ Path = "vapoursynth\VapourSynth.dll"; Name = "VapourSynth" },
+            @{ Path = "vapoursynth\vapoursynth64\plugins\VIVTC.dll"; Name = "VIVTC plugin" }
+          )
+          
+          $allOk = $true
+          foreach ($check in $checks) {
+            $fullPath = Join-Path $depsPath $check.Path
+            if (Test-Path $fullPath) {
+              Write-Host "  ✓ $($check.Name)" -ForegroundColor Green
+            } else {
+              Write-Host "  ✗ $($check.Name) missing" -ForegroundColor Red
+              $allOk = $false
+            }
+          }
+          
+          if (-not $allOk) {
+            Write-Host "`n⚠ Some dependencies are missing!" -ForegroundColor Yellow
+            exit 1
+          }
+          
+          Write-Host "`n✓ All dependencies verified" -ForegroundColor Green
+        } else {
+          Write-Host "✗ Dependencies folder not found!" -ForegroundColor Red
+          exit 1
+        }

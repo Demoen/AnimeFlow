@@ -1,0 +1,75 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 8.0.x
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install 7-Zip
+      run: choco install 7zip -y
+
+    - name: Download Dependencies
+      shell: powershell
+      run: |
+        cd scripts
+        .\Download-Dependencies.ps1 -Force
+
+    - name: Restore Dependencies
+      run: dotnet restore AnimeFlow/AnimeFlow.csproj
+
+    - name: Build
+      run: dotnet build AnimeFlow/AnimeFlow.csproj --configuration Release --no-restore
+
+    - name: Create Release Package
+      shell: powershell
+      run: |
+        $releaseDir = "AnimeFlow/bin/Release/net8.0-windows"
+        $packageDir = "Demoen-Release"
+        
+        # Create package directory
+        New-Item -ItemType Directory -Force -Path $packageDir
+        
+        # Copy application files
+        Copy-Item -Path "$releaseDir/*" -Destination $packageDir -Recurse -Force
+        
+        # Copy Dependencies folder (required for runtime)
+        Copy-Item -Path "Dependencies" -Destination "$packageDir/Dependencies" -Recurse -Force
+        
+        # Copy README and LICENSE
+        Copy-Item -Path "README.md" -Destination $packageDir -Force
+        Copy-Item -Path "LICENSE" -Destination $packageDir -Force
+        
+        # Create zip
+        $zipName = "Demoen-${{ github.ref_name }}-Windows-x64.zip"
+        Compress-Archive -Path "$packageDir/*" -DestinationPath $zipName -Force
+        
+        echo "RELEASE_ZIP=$zipName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: ${{ env.RELEASE_ZIP }}
+        generate_release_notes: true
+        draft: false
+        prerelease: false
