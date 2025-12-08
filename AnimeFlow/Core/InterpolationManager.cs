@@ -6,14 +6,16 @@ using AnimeFlow.Services;
 namespace AnimeFlow.Core
 {
     /// <summary>
-    /// Manages interpolation state and quality presets
+    /// Manages RIFE-based AI interpolation state and quality presets
     /// </summary>
     public class InterpolationManager
     {
         private readonly MpvPlayer _mpvPlayer;
         private readonly SettingsManager _settingsManager;
+        private readonly VapourSynthLoader _vsLoader;
         private bool _isEnabled;
         private QualityPreset _currentPreset;
+        private string? _currentScriptPath;
 
         public bool IsEnabled => _isEnabled;
         public QualityPreset CurrentPreset => _currentPreset;
@@ -22,7 +24,11 @@ namespace AnimeFlow.Core
         {
             _mpvPlayer = mpvPlayer ?? throw new ArgumentNullException(nameof(mpvPlayer));
             _settingsManager = settingsManager ?? throw new ArgumentNullException(nameof(settingsManager));
+            _vsLoader = new VapourSynthLoader();
             _currentPreset = settingsManager.Settings.General.DefaultQualityPreset;
+            
+            // Cleanup old VapourSynth scripts on startup
+            _vsLoader.CleanupOldScripts();
         }
 
         public void Enable()
@@ -32,18 +38,40 @@ namespace AnimeFlow.Core
 
             try
             {
-                System.Diagnostics.Debug.WriteLine("[InterpolationManager] Enabling interpolation...");
+                System.Diagnostics.Debug.WriteLine("[InterpolationManager] Enabling RIFE AI interpolation...");
                 
-                // Enable mpv's minterpolate with quality based on preset
-                _mpvPlayer.EnableInterpolation(_currentPreset);
+                // Get interpolation settings based on current preset
+                var settings = GetInterpolationSettings(_currentPreset);
+                
+                // Generate VapourSynth script with anime-optimized RIFE configuration
+                _currentScriptPath = _vsLoader.GenerateScript(settings);
+                
+                System.Diagnostics.Debug.WriteLine($"[InterpolationManager] VapourSynth script generated: {_currentScriptPath}");
+                
+                // Validate the script
+                if (!_vsLoader.ValidateScript(_currentScriptPath))
+                {
+                    throw new Exception("Generated VapourSynth script validation failed");
+                }
+                
+                // Apply VapourSynth filter to mpv
+                _mpvPlayer.ApplyVapourSynthFilter(_currentScriptPath);
 
                 _isEnabled = true;
-                System.Diagnostics.Debug.WriteLine("[InterpolationManager] Interpolation enabled successfully");
+                System.Diagnostics.Debug.WriteLine("[InterpolationManager] RIFE AI interpolation enabled successfully");
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[InterpolationManager] Error: {ex}");
-                throw new Exception($"Failed to enable interpolation: {ex.Message}", ex);
+                
+                // Cleanup script if it was created
+                if (_currentScriptPath != null && File.Exists(_currentScriptPath))
+                {
+                    try { File.Delete(_currentScriptPath); } catch { }
+                    _currentScriptPath = null;
+                }
+                
+                throw new Exception($"Failed to enable RIFE interpolation: {ex.Message}", ex);
             }
         }
 
@@ -54,13 +82,32 @@ namespace AnimeFlow.Core
 
             try
             {
-                // Disable mpv's interpolation
-                _mpvPlayer.DisableInterpolation();
+                System.Diagnostics.Debug.WriteLine("[InterpolationManager] Disabling RIFE interpolation...");
+                
+                // Remove VapourSynth filter from mpv
+                _mpvPlayer.RemoveVapourSynthFilter();
+                
+                // Delete the temporary VapourSynth script
+                if (_currentScriptPath != null && File.Exists(_currentScriptPath))
+                {
+                    try
+                    {
+                        File.Delete(_currentScriptPath);
+                        System.Diagnostics.Debug.WriteLine($"[InterpolationManager] Deleted script: {_currentScriptPath}");
+                    }
+                    catch (Exception delEx)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[InterpolationManager] Failed to delete script: {delEx.Message}");
+                    }
+                    _currentScriptPath = null;
+                }
+                
                 _isEnabled = false;
+                System.Diagnostics.Debug.WriteLine("[InterpolationManager] RIFE interpolation disabled successfully");
             }
             catch (Exception ex)
             {
-                throw new Exception($"Failed to disable interpolation: {ex.Message}", ex);
+                throw new Exception($"Failed to disable RIFE interpolation: {ex.Message}", ex);
             }
         }
 
@@ -74,6 +121,7 @@ namespace AnimeFlow.Core
             // If interpolation is currently enabled, re-apply with new preset
             if (_isEnabled)
             {
+                System.Diagnostics.Debug.WriteLine($"[InterpolationManager] Changing preset to: {preset}");
                 Disable();
                 Enable();
             }
@@ -116,7 +164,7 @@ namespace AnimeFlow.Core
                 {
                     TargetHeight = 540,
                     SceneThreshold = 0.20,
-                    RifeModel = 1, // Lite model
+                    RifeModel = 18, // rife-v4.6 lite model
                     UhdMode = false,
                     ScalingAlgorithm = "bilinear"
                 },
@@ -124,7 +172,7 @@ namespace AnimeFlow.Core
                 {
                     TargetHeight = 720,
                     SceneThreshold = 0.15,
-                    RifeModel = 0, // Full model
+                    RifeModel = 15, // rife-v4.6 full model (anime-optimized)
                     UhdMode = false,
                     ScalingAlgorithm = "spline36"
                 },
@@ -132,8 +180,8 @@ namespace AnimeFlow.Core
                 {
                     TargetHeight = 1080,
                     SceneThreshold = 0.10,
-                    RifeModel = 0, // Full model
-                    UhdMode = false,
+                    RifeModel = 15, // rife-v4.6 full model
+                    UhdMode = true, // Enable UHD mode for high-res content
                     ScalingAlgorithm = "lanczos"
                 },
                 QualityPreset.Custom => new InterpolationSettings

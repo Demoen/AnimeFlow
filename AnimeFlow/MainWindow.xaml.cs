@@ -340,9 +340,9 @@ namespace AnimeFlow
                 {
                     _interpolationManager.Enable();
                     ToggleInterpolationButton.Content = "Disable Interpolation";
-                    InterpolationStatusText.Text = "Interpolation: ON";
+                    InterpolationStatusText.Text = "Interpolation: ON (RIFE AI)";
                     InterpolationStatusText.Foreground = System.Windows.Media.Brushes.LimeGreen;
-                    ShowOsdMessage("Interpolation enabled");
+                    ShowOsdMessage("RIFE AI Interpolation enabled");
                 }
             }
             catch (Exception ex)
@@ -435,11 +435,11 @@ namespace AnimeFlow
                     if (_interpolationManager.IsEnabled)
                     {
                         var targetFps = videoInfo.IsLikely60FpsContainer ? "Smart 60" : "60";
-                        GpuText.Text = $"Interpolation: {targetFps}fps";
+                        GpuText.Text = $"RIFE AI: {targetFps}fps";
                     }
                     else
                     {
-                        GpuText.Text = "Interpolation: OFF";
+                        GpuText.Text = "RIFE: OFF";
                     }
                     
                     // Show resolution in status if available
@@ -703,8 +703,8 @@ namespace AnimeFlow
             {
                  Dispatcher.Invoke(() =>
                 {
-                    StatusText.Text = "Interpolation Active (60fps)";
-                    _mpvPlayer?.ShowOsdText("Interpolation Active", 3000);
+                    StatusText.Text = "RIFE AI Interpolation Active (60fps)";
+                    _mpvPlayer?.ShowOsdText("RIFE AI Interpolation Active", 3000);
                 });
             }
         }
@@ -742,11 +742,11 @@ namespace AnimeFlow
                         
                         // Update UI
                         ToggleInterpolationButton.Content = "Disable Interpolation";
-                        InterpolationStatusText.Text = "Interpolation: ON";
+                        InterpolationStatusText.Text = "Interpolation: ON (RIFE AI)";
                         InterpolationStatusText.Foreground = System.Windows.Media.Brushes.LimeGreen;
                         
-                        ShowOsdMessage("Interpolation enabled");
-                        UpdateStatus("Playing with interpolation");
+                        ShowOsdMessage("RIFE AI Interpolation enabled");
+                        UpdateStatus("Playing with RIFE AI interpolation");
                     }
                     catch (Exception ex)
                     {

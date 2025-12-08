@@ -2,9 +2,9 @@
 
 ![AnimeFlow Screenshot](Screenshot%202025-12-08%20000421.png)
 
-**Real-time Anime Frame Interpolation Player**
+**Real-time Anime Frame Interpolation Player with AI-Powered RIFE**
 
-Transform your anime watching experience with smooth 60fps playback using AI-powered frame interpolation. AnimeFlow intelligently converts 24fps anime to buttery-smooth 60fps in real-time.
+Transform your anime watching experience with smooth 60fps playback using AI-powered RIFE frame interpolation. AnimeFlow uses cutting-edge deep learning to intelligently generate intermediate frames in real-time, converting 24fps anime to buttery-smooth 60fps.
 
 [![Build Status](https://github.com/Demoen/animeflow/workflows/Build%20and%20Test/badge.svg)](https://github.com/Demoen/animeflow/actions)
 [![Release](https://img.shields.io/github/v/release/Demoen/animeflow)](https://github.com/Demoen/animeflow/releases)
@@ -13,16 +13,18 @@ Transform your anime watching experience with smooth 60fps playback using AI-pow
 ## ✨ Features
 
 ### Core Functionality
-- 🎯 **Real-time 60fps Interpolation** - GPU-accelerated frame interpolation using mpv's built-in engine
+- 🤖 **RIFE AI Interpolation** - Deep learning-powered frame generation using Real-Time Intermediate Flow Estimation
+- ⚡ **GPU-Accelerated** - Utilizes CUDA for real-time processing on NVIDIA RTX GPUs with FP16 precision
 - 🌐 **YouTube Support** - Direct streaming from YouTube URLs with smart 60fps container detection
 - 📁 **Local Playback** - Supports MP4, MKV, AVI, WebM, MOV, and more
 - 🎨 **Modern UI** - Clean, dark-themed interface with intuitive controls
 - 🖱️ **Drag & Drop** - Simply drag videos into the player
 
 ### Advanced Features
-- 🤖 **Smart FPS Detection** - Automatically detects and handles 60fps containers with 24fps content
-- 🎛️ **Quality Presets** - Fast, Balanced, and Beauty modes for different GPUs
-- 🔧 **Hardware Acceleration** - D3D11 GPU decode for H264/HEVC/VP9 (software fallback for AV1)
+- 🎯 **Real-time Optimizations** - Multi-threaded processing, intelligent downscaling, and frame caching
+- 🧠 **Smart FPS Detection** - Automatically detects and handles 60fps containers with 24fps content
+- 🎛️ **Quality Presets** - Fast, Balanced, and Beauty modes optimized for different GPUs
+- 🔧 **Hardware Acceleration** - D3D11 GPU decode for H264/HEVC/VP9, VapourSynth R73 integration
 - 📊 **Real-time Monitoring** - Live FPS counter and resolution display
 - ⚡ **Optimized Streaming** - Large buffers and smart caching for smooth YouTube playback
 
@@ -31,14 +33,39 @@ Transform your anime watching experience with smooth 60fps playback using AI-pow
 ### Prerequisites
 - **Windows 10/11** (64-bit)
 - **.NET 8.0 Runtime** - [Download here](https://dotnet.microsoft.com/download/dotnet/8.0)
-- **GPU** - NVIDIA GTX 1660 or better recommended (RTX series ideal)
+- **GPU** - NVIDIA RTX 2060 or better recommended (RTX 2070+ ideal for RIFE AI)
+- **Python 3.8** - [Download here](https://www.python.org/downloads/release/python-3810/) *(for RIFE AI)*
+- **VapourSynth R73** - [Download here](https://github.com/vapoursynth/vapoursynth/releases/download/R73/VapourSynth-x64-R73.exe) *(for RIFE AI)*
 
 ### Installation
 
+**Option A: Full RIFE AI Setup (Recommended)**
+
 1. **Download** the latest release from [Releases](https://github.com/Demoen/animeflow/releases)
 2. **Extract** the ZIP file to a folder
-3. **Run** `AnimeFlow.exe`
-4. **Enjoy!** All dependencies are included
+3. **Install Prerequisites**:
+   - Install Python 3.8 (check "Add Python to PATH")
+   - Install VapourSynth R73 with Python 3.8 support
+4. **Install Python Packages**:
+   ```powershell
+   # GPU PyTorch with CUDA 11.8
+   python -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+   
+   # VapourSynth + RIFE
+   python -m pip install vapoursynth
+   python -m pip install vsrife --no-deps
+   python -m pip install numpy requests tqdm
+   ```
+5. **Run** `AnimeFlow.exe`
+6. **Enjoy AI-powered 60fps!**
+
+**Option B: Quick Start (Basic Interpolation)**
+
+If you don't want to set up RIFE AI:
+1. Download and extract
+2. Install .NET 8.0 Runtime only
+3. Run `AnimeFlow.exe`
+4. Uses mpv's built-in GPU interpolation (still excellent!)
 
 ### Building from Source
 
@@ -88,37 +115,49 @@ dotnet run --configuration Release
 ## 🎨 Quality Presets
 
 ### Fast
-- **Target**: 540p processing
-- **GPU Usage**: ~30-50%
-- **Best for**: GTX 1660, RTX 2060
-- **Quality**: Good
+- **Target**: 720p processing with scale=0.5
+- **GPU Usage**: ~30-40%
+- **Best for**: RTX 2060, RTX 3060
+- **Quality**: Good, real-time performance
 
 ### Balanced (Recommended)
-- **Target**: 720p processing
-- **GPU Usage**: ~50-70%
-- **Best for**: RTX 3060, RTX 4060
-- **Quality**: Excellent
+- **Target**: 720p processing with scale=0.5
+- **GPU Usage**: ~40-60%
+- **Best for**: RTX 2070, RTX 3060 Ti, RTX 4060
+- **Quality**: Excellent, smooth real-time
 
 ### Beauty
-- **Target**: 1080p processing
-- **GPU Usage**: ~70-90%
+- **Target**: 720p processing with scale=1.0
+- **GPU Usage**: ~60-80%
 - **Best for**: RTX 3070+, RTX 4070+
-- **Quality**: Maximum
+- **Quality**: Maximum quality, near real-time
 
 ## 🔧 Technical Details
 
 ### Architecture
 - **Player**: libmpv (latest)
-- **Interpolation**: mpv's display-resample with advanced temporal filtering
-- **Hardware Decode**: D3D11VA for H264/HEVC/VP9, software fallback for AV1
+- **AI Engine**: RIFE (Real-Time Intermediate Flow Estimation) via vsrife
+- **Framework**: VapourSynth R73 for video processing pipeline
+- **Deep Learning**: PyTorch with CUDA 11.8 and FP16 precision
+- **Hardware Decode**: D3D11VA for H264/HEVC/VP9
 - **Rendering**: gpu-next with D3D11 backend
 - **Streaming**: yt-dlp for YouTube support
 
-### Interpolation Engine
+### RIFE AI Pipeline
 ```
-Source FPS Detection → Duplicate Frame Removal → GPU Interpolation → 60fps Output
-    (24/30fps)              (if needed)           (temporal filters)
+Input (24fps) → VapourSynth → RGB Conversion → RIFE Neural Network →
+                                                  ↓
+Multi-threaded → Frame Generation → YUV Conversion → Output (60fps)
+Processing       (GPU/FP16)         (Fast Bilinear)
 ```
+
+### Real-Time Optimizations
+- **Multi-threading**: Uses all CPU cores for parallel processing
+- **Resolution Management**: 1080p+ downscaled to 720p for RIFE, then upscaled
+- **FP16 Precision**: 2x faster inference on RTX GPUs
+- **Internal Scaling**: RIFE processes at 0.5x scale for high-res content
+- **Frame Caching**: 100-frame buffer prevents stuttering
+- **Fast Algorithms**: Bilinear scaling for speed over quality
 
 ### YouTube Optimization
 - Automatically detects 60fps containers with 24fps content
@@ -132,12 +171,25 @@ Source FPS Detection → Duplicate Frame Removal → GPU Interpolation → 60fps
 |-----|------|----------|--------|
 | RTX 4090 | ✅ Excellent | ✅ Excellent | ✅ Excellent |
 | RTX 4070 | ✅ Excellent | ✅ Excellent | ✅ Excellent |
-| RTX 3070 | ✅ Excellent | ✅ Excellent | ✅ Very Good |
-| RTX 3060 | ✅ Excellent | ✅ Very Good | ⚠️ Good |
-| RTX 2060 | ✅ Very Good | ⚠️ Good | ❌ Limited |
-| GTX 1660 | ✅ Good | ⚠️ Fair | ❌ Not Recommended |
+| RTX 3080 | ✅ Excellent | ✅ Excellent | ✅ Very Good |
+| RTX 3070 | ✅ Excellent | ✅ Very Good | ✅ Very Good |
+| RTX 3060 | ✅ Very Good | ✅ Very Good | ⚠️ Good |
+| RTX 2070 | ✅ Very Good | ✅ Good | ⚠️ Good |
+| RTX 2060 | ✅ Good | ⚠️ Fair | ❌ Limited |
+
+*Performance based on RIFE AI interpolation with FP16 precision*
 
 ## 🐛 Troubleshooting
+
+### "Could not initialize VapourSynth scripting"
+- Install VapourSynth R73 system-wide: [Download here](https://github.com/vapoursynth/vapoursynth/releases/download/R73/VapourSynth-x64-R73.exe)
+- Ensure Python 3.8 is installed and in PATH
+- Run: `python -m pip install vapoursynth vsrife`
+
+### Python/PyTorch errors
+- Verify Python 3.8 is installed (not 3.9, 3.10, 3.11+)
+- Install GPU PyTorch: `python -m pip install torch --index-url https://download.pytorch.org/whl/cu118`
+- Check GPU drivers are up to date
 
 ### Video is black
 - **Wait 15-20 seconds** for YouTube videos to buffer
@@ -145,23 +197,17 @@ Source FPS Detection → Duplicate Frame Removal → GPU Interpolation → 60fps
 - Try lowering quality preset
 - Check `animeflow_debug.log` for errors
 
-### Stuttering/Low FPS
+### Stuttering/Low FPS with RIFE
 - Lower quality preset (try Fast)
+- Ensure GPU drivers are updated
 - Close other GPU-intensive applications
-- Update GPU drivers
-- Try 720p content instead of 4K
+- Monitor GPU temperature and usage
+- 1080p content is auto-downscaled for performance
 
-### YouTube URL not working
-- Ensure internet connection
-- Update `yt-dlp.exe` in `Dependencies/tools/`
-- Try a different video
-- Check firewall settings
-
-### Interpolation not smooth
-- Verify GPU supports DirectX 11
-- Monitor GPU usage (shouldn't be at 100%)
-- Try Balanced preset
-- Ensure adequate GPU cooling
+### Want basic interpolation without RIFE setup?
+- Skip Python/VapourSynth installation
+- App will use mpv's built-in GPU interpolation
+- Still provides excellent 60fps results!
 
 ## 📝 Logs
 
@@ -238,6 +284,10 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🙏 Acknowledgments
 
+- **[RIFE](https://github.com/hzwer/Practical-RIFE)** - Real-Time Intermediate Flow Estimation neural network
+- **[vsrife](https://github.com/HolyWu/vs-rife)** - VapourSynth RIFE plugin
+- **[VapourSynth](https://github.com/vapoursynth/vapoursynth)** - Professional video processing framework
+- **[PyTorch](https://pytorch.org/)** - Deep learning framework powering RIFE
 - **[mpv](https://mpv.io/)** - Excellent media player foundation
 - **[yt-dlp](https://github.com/yt-dlp/yt-dlp)** - YouTube streaming support
 - **[ModernWpfUI](https://github.com/Kinnara/ModernWpf)** - Modern WPF styling

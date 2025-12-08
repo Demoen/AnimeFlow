@@ -18,17 +18,18 @@ import os
 
 core = vs.core
 
+# PERFORMANCE: Configure VapourSynth for real-time processing
+# Use all available CPU threads for parallel processing
+import multiprocessing
+core.num_threads = multiprocessing.cpu_count()
+core.log_message(vs.MESSAGE_TYPE_INFORMATION, f'VapourSynth using {core.num_threads} threads')
+
 # Paths
 animeflow_root = '{{ANIMEFLOW_ROOT}}'
 dependencies_path = os.path.join(animeflow_root, 'Dependencies')
-vs_path = os.path.join(dependencies_path, 'vapoursynth')
 rife_path = os.path.join(dependencies_path, 'rife')
-model_path = '{{MODEL_PATH}}'
 
-# Add to Python path
-sys.path.insert(0, vs_path)
-sys.path.insert(0, os.path.join(vs_path, 'vapoursynth64', 'plugins'))
-sys.path.insert(0, os.path.join(vs_path, 'vapoursynth64', 'coreplugins'))
+# Note: Using system VapourSynth (installed via pip), no need to add bundled paths
 
 # Try to import RIFE - support both vsrife (Python) and rife (DLL-based) plugins
 rife_available = False
@@ -36,28 +37,30 @@ try:
     import vsrife
     rife_available = True
     rife_method = 'vsrife'
-    core.log_message(vs.MESSAGE_TYPE_INFORMATION, 'Using vsrife (Python-based RIFE)')
+    core.log_message(vs.MESSAGE_TYPE_INFORMATION, 'AnimeFlow: Using vsrife (Python-based RIFE)')
 except ImportError:
     try:
         # Fallback to DLL-based RIFE plugin
         if hasattr(core, 'rife'):
             rife_available = True
             rife_method = 'dll'
-            core.log_message(vs.MESSAGE_TYPE_INFORMATION, 'Using DLL-based RIFE plugin')
+            core.log_message(vs.MESSAGE_TYPE_INFORMATION, 'AnimeFlow: Using DLL-based RIFE plugin')
     except:
         pass
 
 if not rife_available:
-    core.log_message(vs.MESSAGE_TYPE_CRITICAL, 'RIFE plugin not available! Install vsrife or librife.dll')
+    core.log_message(vs.MESSAGE_TYPE_CRITICAL, 'AnimeFlow: RIFE plugin not available! Install vsrife or librife.dll')
     raise ImportError('RIFE plugin not found')
 
 # Settings
 target_height = {{TARGET_HEIGHT}}
 scene_threshold = {{SCENE_THRESHOLD}}
 gpu_id = {{GPU_ID}}
-rife_model = {{RIFE_MODEL}}
+model_name = '{{MODEL_NAME}}'  # e.g., 'rife-anime', 'rife-v4.6'
 uhd_mode = {{UHD_MODE}}
 scaling_algorithm = '{{SCALING_ALGORITHM}}'
+
+core.log_message(vs.MESSAGE_TYPE_INFORMATION, f'AnimeFlow: Using model: {model_name}')
 
 def detect_real_fps(clip):
     '''Detect the real framerate of content, accounting for duplicate frames in 60fps containers'''
@@ -119,6 +122,7 @@ def detect_real_fps(clip):
     return clip, src_fps
 
 def anime_interpolate(clip):
+    '''Real-time optimized RIFE interpolation for anime'''
     # Get source properties
     src_width = clip.width
     src_height = clip.height
@@ -150,37 +154,30 @@ def anime_interpolate(clip):
         target_fps_den = 1
         core.log_message(vs.MESSAGE_TYPE_INFORMATION, f'Interpolating {src_fps}fps -> {target_fps_num}fps (multiplier: {multiplier})')
     
-    # Convert to RGB
-    if scaling_algorithm == 'bilinear':
-        clip = core.resize.Bilinear(clip, format=vs.RGBS, matrix_in_s='709')
-    elif scaling_algorithm == 'lanczos':
-        clip = core.resize.Lanczos(clip, format=vs.RGBS, matrix_in_s='709')
-    else:  # spline36
-        clip = core.resize.Spline36(clip, format=vs.RGBS, matrix_in_s='709')
-    
-    # Intelligent downscaling
+    # PERFORMANCE OPTIMIZATION: Downscale BEFORE RGB conversion for 1080p+ content
+    # This drastically reduces processing load for real-time performance
     original_width = src_width
     original_height = src_height
     needs_upscale = False
     
-    if src_height > target_height:
-        scale_factor = target_height / src_height
+    # For 1080p+, process at 720p for real-time performance
+    if src_height > 720:
+        scale_factor = 720 / src_height
         new_width = int(src_width * scale_factor)
-        new_height = target_height
+        new_height = 720
         
         new_width = new_width - (new_width % 2)
         new_height = new_height - (new_height % 2)
         
-        if scaling_algorithm == 'bilinear':
-            clip = core.resize.Bilinear(clip, new_width, new_height)
-        elif scaling_algorithm == 'lanczos':
-            clip = core.resize.Lanczos(clip, new_width, new_height)
-        else:
-            clip = core.resize.Spline36(clip, new_width, new_height)
-        
+        # Fast Bilinear downscale (speed priority)
+        clip = core.resize.Bilinear(clip, new_width, new_height)
         needs_upscale = True
+        core.log_message(vs.MESSAGE_TYPE_INFORMATION, f'Downscaled to {new_width}x{new_height} for real-time processing')
     
-    # Scene change detection
+    # Convert to RGB using fast Bilinear (RIFE requirement)
+    clip = core.resize.Bilinear(clip, format=vs.RGBS, matrix_in_s='709')
+    
+    # Lightweight scene change detection
     if hasattr(core, 'misc'):
         clip = core.misc.SCDetect(clip, threshold=scene_threshold)
     else:
@@ -189,56 +186,59 @@ def anime_interpolate(clip):
     # Log initialization success for UI confirmation
     core.log_message(vs.MESSAGE_TYPE_INFORMATION, 'AnimeFlow: Interpolation initialized')
 
-    # RIFE interpolation
+    # RIFE interpolation - Real-time optimized
     try:
         if rife_method == 'vsrife':
-            # Python-based vsrife
+            # Python-based vsrife with real-time optimizations
+            # API: RIFE(clip, multi=2, scale=1.0, device_type='cuda', device_index=0, fp16=False)
+            # Calculate multiplier from the already determined target fps
+            rife_multi = int(target_fps_num / src_fps) if src_fps > 0 else 2
+            
+            # PERFORMANCE: Use scale parameter for internal processing
+            # scale < 1.0 processes at lower resolution internally, then upscales
+            # This can significantly improve real-time performance
+            rife_scale = 0.5 if src_height > 720 else 1.0
+            
+            core.log_message(vs.MESSAGE_TYPE_INFORMATION, f'AnimeFlow: Starting RIFE (multi={rife_multi}, scale={rife_scale}, fp16=True)')
+            
             clip = vsrife.RIFE(
                 clip,
-                model=rife_model,
-                fps_num=target_fps_num,
-                fps_den=target_fps_den,
-                scale=1.0,
+                multi=rife_multi,
+                scale=rife_scale,  # Internal processing scale for performance
+                device_type='cuda',
                 device_index=gpu_id,
-                tta=False,
-                uhd=uhd_mode,
-                sc=True  # Scene change detection
+                fp16=True  # FP16 for 2x performance on RTX GPUs
             )
+            core.log_message(vs.MESSAGE_TYPE_INFORMATION, f'AnimeFlow: RIFE AI interpolation complete: {src_fps:.2f}fps -> {target_fps_num}fps')
         else:
-            # DLL-based RIFE
+            # DLL-based RIFE (less common, fallback)
             clip = core.rife.RIFE(
                 clip,
-                model=rife_model,
+                model=model_name,
                 multiplier=multiplier,
                 gpu_id=gpu_id,
                 tta=False,
                 uhd=uhd_mode,
                 sc=True
             )
-        core.log_message(vs.MESSAGE_TYPE_INFORMATION, f'RIFE interpolation applied: {target_fps_num}fps')
+            core.log_message(vs.MESSAGE_TYPE_INFORMATION, f'AnimeFlow: RIFE (DLL) interpolation applied: {target_fps_num}fps')
     except Exception as e:
-        core.log_message(vs.MESSAGE_TYPE_CRITICAL, f'RIFE failed: {e}')
+        core.log_message(vs.MESSAGE_TYPE_CRITICAL, f'AnimeFlow: RIFE failed: {e}')
         raise
     
-    # Upscale back to original resolution
+    # Upscale back to original resolution using fast algorithm
     if needs_upscale:
-        if scaling_algorithm == 'bilinear':
-            clip = core.resize.Bilinear(clip, original_width, original_height)
-        elif scaling_algorithm == 'lanczos':
-            clip = core.resize.Lanczos(clip, original_width, original_height)
-        else:
-            clip = core.resize.Spline36(clip, original_width, original_height)
+        clip = core.resize.Bilinear(clip, original_width, original_height)
     
-    # Convert back to YUV
-    if scaling_algorithm == 'bilinear':
-        clip = core.resize.Bilinear(clip, format=vs.YUV420P8, matrix_s='709')
-    elif scaling_algorithm == 'lanczos':
-        clip = core.resize.Lanczos(clip, format=vs.YUV420P8, matrix_s='709')
-    else:
-        clip = core.resize.Spline36(clip, format=vs.YUV420P8, matrix_s='709')
+    # Convert back to YUV using fast Bilinear
+    clip = core.resize.Bilinear(clip, format=vs.YUV420P8, matrix_s='709')
     
-    # Set output FPS
-    clip = core.std.AssumeFPS(clip, fpsnum=target_fps_num, fpsden=target_fps_den)
+    # CRITICAL: Set aggressive caching for real-time playback
+    # Cache enough frames to avoid stuttering
+    clip = core.std.Cache(clip, make_linear=True, size=100)
+    
+    # Note: vsrife.RIFE automatically sets the correct output FPS based on multi parameter
+    # No need to manually set FPS with AssumeFPS
     
     return clip
 
@@ -264,17 +264,24 @@ else:
                 if (animeflowRoot.EndsWith("\\"))
                     animeflowRoot = animeflowRoot.Substring(0, animeflowRoot.Length - 1);
 
-                var modelPath = Path.Combine(animeflowRoot, "Dependencies", "models", "rife-v4.6");
+                // Map RifeModel integer to actual model name
+                // Using anime-optimized models for best quality
+                string modelName = settings.RifeModel switch
+                {
+                    15 => "rife-v4.6",        // Latest model, best quality
+                    18 => "rife-v4.6",        // Lite version (same as 15 for vsrife)
+                    10 => "rife-anime",       // Anime-specific model
+                    _ => "rife-v4.6"          // Default to latest
+                };
 
                 // Replace placeholders
                 // Use double backslash for Python strings
                 var script = ScriptTemplate
                     .Replace("{{ANIMEFLOW_ROOT}}", animeflowRoot.Replace("\\", "\\\\"))
-                    .Replace("{{MODEL_PATH}}", modelPath.Replace("\\", "\\\\"))
                     .Replace("{{TARGET_HEIGHT}}", settings.TargetHeight.ToString())
                     .Replace("{{SCENE_THRESHOLD}}", settings.SceneThreshold.ToString("F2"))
                     .Replace("{{GPU_ID}}", "0")
-                    .Replace("{{RIFE_MODEL}}", settings.RifeModel.ToString())
+                    .Replace("{{MODEL_NAME}}", modelName)
                     .Replace("{{UHD_MODE}}", settings.UhdMode ? "True" : "False")
                     .Replace("{{SCALING_ALGORITHM}}", settings.ScalingAlgorithm);
 

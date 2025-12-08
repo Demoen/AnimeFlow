@@ -143,7 +143,7 @@ namespace AnimeFlow.Core
                 return IntPtr.Zero;
             });
 
-            // Configure VapourSynth environment
+            // Configure VapourSynth environment for mpv
             try
             {
                 var basePath = AppDomain.CurrentDomain.BaseDirectory;
@@ -154,6 +154,68 @@ namespace AnimeFlow.Core
                 if (!path.Contains(vsPath))
                 {
                     Environment.SetEnvironmentVariable("PATH", $"{vsPath};{path}");
+                }
+                
+                // CRITICAL: Add Python 3.8 directory to PATH so VSScriptPython38.dll can find python38.dll
+                var python38Dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "Python", "Python38");
+                if (Directory.Exists(python38Dir) && !path.Contains(python38Dir))
+                {
+                    Environment.SetEnvironmentVariable("PATH", $"{python38Dir};{Environment.GetEnvironmentVariable("PATH")}");
+                    // Also set PYTHONHOME so VapourSynth knows where Python is
+                    Environment.SetEnvironmentVariable("PYTHONHOME", python38Dir);
+                }
+                
+                // Set PYTHONPATH to include VapourSynth and site-packages
+                var pythonPath = Environment.GetEnvironmentVariable("PYTHONPATH") ?? string.Empty;
+                
+                // Find Python's site-packages directory
+                try
+                {
+                    var psi = new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "python",
+                        Arguments = "-c \"import site; print(';'.join(site.getsitepackages()))\"",
+                        UseShellExecute = false,
+                        RedirectStandardOutput = true,
+                        CreateNoWindow = true
+                    };
+                    var proc = System.Diagnostics.Process.Start(psi);
+                    if (proc != null)
+                    {
+                        var sitePackages = proc.StandardOutput.ReadToEnd().Trim();
+                        proc.WaitForExit();
+                        if (proc.ExitCode == 0 && !string.IsNullOrEmpty(sitePackages))
+                        {
+                            pythonPath = string.IsNullOrEmpty(pythonPath) 
+                                ? sitePackages 
+                                : $"{sitePackages};{pythonPath}";
+                        }
+                    }
+                }
+                catch { /* Ignore errors finding site-packages */ }
+                
+                // Add VapourSynth paths
+                var vsPythonPaths = new[]
+                {
+                    vsPath,
+                    Path.Combine(vsPath, "vapoursynth64"),
+                    Path.Combine(vsPath, "vapoursynth64", "plugins"),
+                    Path.Combine(vsPath, "vapoursynth64", "coreplugins")
+                };
+                
+                foreach (var vsPythonPath in vsPythonPaths)
+                {
+                    if (!pythonPath.Contains(vsPythonPath))
+                    {
+                        pythonPath = string.IsNullOrEmpty(pythonPath) 
+                            ? vsPythonPath 
+                            : $"{vsPythonPath};{pythonPath}";
+                    }
+                }
+                
+                if (!string.IsNullOrEmpty(pythonPath))
+                {
+                    Environment.SetEnvironmentVariable("PYTHONPATH", pythonPath);
                 }
             }
             catch { /* Ignore errors in static constructor */ }
@@ -182,10 +244,39 @@ namespace AnimeFlow.Core
                 var vsPath = Path.Combine(basePath, "Dependencies", "vapoursynth");
                 var vsDllPath = Path.Combine(vsPath, "VapourSynth.dll");
                 
+                OnLogMessage($"Configuring VapourSynth...");
+                OnLogMessage($"VS Path: {vsPath}");
+                OnLogMessage($"VS DLL: {vsDllPath}");
+                OnLogMessage($"VS DLL exists: {File.Exists(vsDllPath)}");
+                OnLogMessage($"PYTHONPATH: {Environment.GetEnvironmentVariable("PYTHONPATH")}");
+                
                 // Set VapourSynth library path
                 if (File.Exists(vsDllPath))
                 {
-                    SetOption("vapoursynth-path", vsDllPath.Replace("\\", "\\\\"));
+                    // Use forward slashes for mpv
+                    SetOption("vapoursynth-path", vsDllPath.Replace("\\", "/"));
+                    OnLogMessage($"VapourSynth path configured for mpv");
+                    
+                    // Try to find compatible Python (3.8-3.11) for VapourSynth
+                    // Search in common locations and PATH
+                    string foundPython = FindCompatiblePython();
+                    
+                    if (foundPython != null)
+                    {
+                        // Set Python path for VapourSynth
+                        SetOption("script-opts", $"vapoursynth-python={foundPython.Replace("\\", "/")}");
+                        OnLogMessage($"Configured VapourSynth to use Python: {foundPython}");
+                    }
+                    else
+                    {
+                        OnLogMessage($"WARNING: No compatible Python (3.8-3.11) found!");
+                        OnLogMessage($"VapourSynth requires Python 3.8-3.11 (not 3.12+)");
+                        OnLogMessage($"RIFE interpolation will not work without compatible Python");
+                    }
+                }
+                else
+                {
+                    OnLogMessage($"WARNING: VapourSynth.dll not found!");
                 }
 
                 // CRITICAL: Set window ID BEFORE initializing mpv
@@ -916,6 +1007,139 @@ namespace AnimeFlow.Core
         ~MpvPlayer()
         {
             // Don't call Dispose from finalizer to avoid cross-thread issues
+        }
+
+        /// <summary>
+        /// Finds a compatible Python installation (3.8-3.11) for VapourSynth
+        /// Searches: 1) Bundled Python, 2) User's AppData, 3) System locations, 4) PATH
+        /// </summary>
+        private static string? FindCompatiblePython()
+        {
+            var basePath = AppDomain.CurrentDomain.BaseDirectory;
+            // IMPORTANT: Python 3.8 first since bundled VapourSynth has VSScriptPython38.dll
+            var compatibleVersions = new[] { "38", "39", "310", "311" };
+            
+            // 1. Check for bundled Python (distribution-friendly)
+            var bundledPythonPath = Path.Combine(basePath, "Dependencies", "python");
+            foreach (var version in compatibleVersions)
+            {
+                var pythonExe = Path.Combine(bundledPythonPath, "python.exe");
+                if (File.Exists(pythonExe))
+                {
+                    // Verify it's the right version
+                    if (VerifyPythonVersion(pythonExe, version))
+                        return pythonExe;
+                }
+            }
+            
+            // 2. Check user's AppData\Local\Programs\Python
+            var userPythonBase = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Programs", "Python"
+            );
+            
+            if (Directory.Exists(userPythonBase))
+            {
+                foreach (var version in compatibleVersions)
+                {
+                    var pythonExe = Path.Combine(userPythonBase, $"Python{version}", "python.exe");
+                    if (File.Exists(pythonExe))
+                        return pythonExe;
+                }
+            }
+            
+            // 3. Check common system locations
+            foreach (var version in compatibleVersions)
+            {
+                var pythonExe = $@"C:\Python{version}\python.exe";
+                if (File.Exists(pythonExe))
+                    return pythonExe;
+            }
+            
+            // 4. Try to find python in PATH (last resort)
+            try
+            {
+                var psi = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "python",
+                    Arguments = "--version",
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true
+                };
+                
+                var process = System.Diagnostics.Process.Start(psi);
+                if (process != null)
+                {
+                    var output = process.StandardOutput.ReadToEnd();
+                    process.WaitForExit();
+                    
+                    // Check if version is 3.8-3.11
+                    if (output.Contains("Python 3.8") || output.Contains("Python 3.9") ||
+                        output.Contains("Python 3.10") || output.Contains("Python 3.11"))
+                    {
+                        // Find full path
+                        var wherePsi = new System.Diagnostics.ProcessStartInfo
+                        {
+                            FileName = "where",
+                            Arguments = "python",
+                            UseShellExecute = false,
+                            RedirectStandardOutput = true,
+                            CreateNoWindow = true
+                        };
+                        
+                        var whereProcess = System.Diagnostics.Process.Start(wherePsi);
+                        if (whereProcess != null)
+                        {
+                            var pythonPath = whereProcess.StandardOutput.ReadLine();
+                            whereProcess.WaitForExit();
+                            
+                            if (!string.IsNullOrEmpty(pythonPath) && File.Exists(pythonPath))
+                                return pythonPath;
+                        }
+                    }
+                }
+            }
+            catch { /* Ignore errors in Python detection */ }
+            
+            return null;
+        }
+        
+        /// <summary>
+        /// Verifies Python version matches expected version
+        /// </summary>
+        private static bool VerifyPythonVersion(string pythonExe, string expectedVersion)
+        {
+            try
+            {
+                var psi = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = pythonExe,
+                    Arguments = "--version",
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true
+                };
+                
+                var process = System.Diagnostics.Process.Start(psi);
+                if (process != null)
+                {
+                    var output = process.StandardOutput.ReadToEnd() + process.StandardError.ReadToEnd();
+                    process.WaitForExit();
+                    
+                    // Check if output contains expected version
+                    var versionStr = expectedVersion.Length == 2 ? 
+                        $"3.{expectedVersion}" : 
+                        $"3.{expectedVersion[0]}{expectedVersion[1]}";
+                    
+                    return output.Contains(versionStr);
+                }
+            }
+            catch { }
+            
+            return false;
         }
     }
 
